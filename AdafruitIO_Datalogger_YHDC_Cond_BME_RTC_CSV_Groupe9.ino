@@ -99,9 +99,10 @@ void loop() {
 
   int sensorValue = analogRead(A0);
   float voltage = sensorValue * (1.0 / 1.023);
-  float intensite = voltage*0.1171-1.12;
+  float voltageeff = voltage*2/1.414;
+  float intensite = voltageeff*0.0258-0.1902;
   // Afficher la tension en volts
-  Serial.print("Vmesuré : ");
+  Serial.print("Vmesuré (mV) : ");
   Serial.print(voltage);
   Serial.print("Intensité : ");
   Serial.print(intensite);
@@ -164,5 +165,5 @@ void loop() {
   else { Serial.println("error opening datalog.txt"); }
 
 
-  delay(5000);  // Pause de 10 secondes
+  delay(10000);  // Pause de 10 secondes
 }
