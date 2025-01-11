@@ -1,122 +1,116 @@
 #include "config.h"
-#include <Adafruit_BME280.h>  // Inclusion de la librairie BME280 d'Adafruit
-#include "RTClib.h"
+#include <Adafruit_BME280.h>  // Inclusion de la bibliothèque BME280 d'Adafruit
+#include "RTClib.h"  // Inclusion de la bibliothèque pour la gestion du module RTC
 
 RTC_DS3231 rtc;
 
 // Constantes du programme
-#define adresseI2CduBME280 0x76               // Adresse I2C du BME280 (0x76)
-#define pressionAuNiveauDeLaMerEnHpa 1024.90  // Pression au niveau de la mer en hPa
-#define delaiRafraichissementAffichage 1500   // Délai de rafraîchissement en ms
+#define adresseI2CduBME280 0x76               // Adresse I2C du capteur BME280 (0x76)
+#define pressionAuNiveauDeLaMerEnHpa 1024.90  // Pression standard au niveau de la mer en hPa
+#define delaiRafraichissementAffichage 1500   // Délai de rafraîchissement de l'affichage en millisecondes
 
-// Instanciation de la librairie BME280
+// Instanciation de la bibliothèque BME280
 Adafruit_BME280 bme;
 
 #include <SPI.h>
 #include <SD.h>
 
-const int chipSelect = 15;
+const int chipSelect = 15;  // Broche de sélection de la carte SD
 
-
-// Création des flux Adafruit IO
-AdafruitIO_Feed *temp = io.feed("temperature");
-AdafruitIO_Feed *hum = io.feed("humidite");
-AdafruitIO_Feed *press = io.feed("pression");
-AdafruitIO_Feed *alt = io.feed("altitude");
-AdafruitIO_Feed *inten = io.feed("intensite");
-
+// Création des flux Adafruit IO pour envoyer les données à la plateforme
+AdafruitIO_Feed *temp = io.feed("temperature");  // Flux pour la température
+AdafruitIO_Feed *hum = io.feed("humidite");      // Flux pour l'humidité
+AdafruitIO_Feed *press = io.feed("pression");   // Flux pour la pression
+AdafruitIO_Feed *alt = io.feed("altitude");     // Flux pour l'altitude
+AdafruitIO_Feed *inten = io.feed("intensite");  // Flux pour l'intensité
 
 void setup() {
-  // Initialisation du port série pour le moniteur
+  // Initialisation du port série pour le moniteur série
   Serial.begin(9600);
-  while (!Serial)
-    ;
+  while (!Serial);  // Attente de la connexion série
   Serial.println("Programme de test du BME280");
 
 #ifndef ESP8266
-  while (!Serial)
-    ;  // wait for serial port to connect. Needed for native USB
+  while (!Serial);  // Nécessaire pour certains modules USB natifs
 #endif
 
-  // Initialisation du BME280
+  // Initialisation du capteur BME280
   if (!bme.begin(adresseI2CduBME280)) {
-    Serial.println(F("--> ÉCHEC…"));
-    while (1)
-      ;
+    Serial.println(F("--> ÉCHEC de l'initialisation du BME280..."));
+    while (1);  // Blocage si le capteur n'est pas détecté
   } else {
-    Serial.println(F("--> RÉUSSIE !"));
+    Serial.println(F("--> Initialisation du BME280 réussie !"));
   }
 
-  // Connexion à Adafruit IO
+  // Connexion à la plateforme Adafruit IO
   Serial.begin(115200);
-  while (!Serial)
-    ;
-  Serial.print("Connecting to Adafruit IO");
+  while (!Serial);  // Attente de la connexion série
+  Serial.print("Connexion à Adafruit IO");
 
-  io.connect();
+  io.connect();  // Connexion au service
   while (io.status() < AIO_CONNECTED) {
     Serial.print(".");
     delay(500);
 
+    // Initialisation du module RTC
     if (!rtc.begin()) {
-      Serial.println("Couldn't find RTC");
+      Serial.println("Module RTC non détecté !");
       Serial.flush();
       while (1) delay(10);
     }
 
+    // Vérification de la perte d'alimentation du RTC
     if (rtc.lostPower()) {
-      Serial.println("RTC lost power, let's set the time!");
-      // When time needs to be set on a new device, or after a power loss, the
-      // following line sets the RTC to the date & time this sketch was compiled
+      Serial.println("Le RTC a perdu son alimentation. Réinitialisation...");
+      // Réglage de l'heure à la date de compilation du programme
       rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-      // This line sets the RTC with an explicit date & time, for example to set
-      // January 21, 2014 at 3am you would call:
-      // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
+      // Exemple pour un réglage manuel : rtc.adjust(DateTime(2024, 1, 21, 3, 0, 0));
     }
   }
 
   Serial.println();
   Serial.println(io.statusText());
 
-  // Afficher les étiquettes en première ligne
+  // Affichage des étiquettes en première ligne du moniteur série
   Serial.println("TIME;TEMPERATURE;PRESSION;HUMIDITE;ALTITUDE");
 
-  Serial.print("Initializing SD card...");
+  Serial.print("Initialisation de la carte SD...");
 
-  // see if the card is present and can be initialized:
+  // Vérification de la présence et de l'initialisation de la carte SD
   if (!SD.begin(chipSelect)) {
-    Serial.println("Card failed, or not present");
-    // don't do anything more:
-    return;
+    Serial.println("Échec de l'initialisation ou carte absente");
+    return;  // Fin du programme en cas d'échec
   }
-  Serial.println("card initialized.");
+  Serial.println("Carte SD initialisée.");
 }
 
 void loop() {
-  io.run();
-  DateTime now = rtc.now();
+  io.run();  // Gestion des flux Adafruit IO
+  DateTime now = rtc.now();  // Lecture de l'heure actuelle via le RTC
   String dataString = "";
 
+  // Lecture de la tension sur la broche analogique A0
   int sensorValue = analogRead(A0);
-  float voltage = sensorValue * (1.0 / 1.023);
-  float voltageeff = voltage*2/1.414;
-  float intensite = voltageeff*0.0258-0.1902;
-  // Afficher la tension en volts
-  Serial.print("Vmesuré (mV) : ");
+  float voltage = sensorValue * (1.0 / 1.023);  // Conversion en tension (mV) (correspond à VMax/2)
+  float voltageeff = voltage * 2 / 1.414;       // Calcul de la tension efficace (Veff = Vmax/sqrt(2))
+  float intensite = voltageeff * 0.0258 - 0.1902;  // Calcul de l'intensité (avec la linéarisation réalisée sur Excel)
+
+  // Affichage des mesures de tension et d'intensité
+  Serial.print("Vmesuré : ");
   Serial.print(voltage);
-  Serial.print("Intensité : ");
+  Serial.print("mV, Intensité : ");
   Serial.print(intensite);
   Serial.println(" A");
 
-  // Sauvegarde des données sur Adafruit IO
-  
+  // Sauvegarde des données dans les flux Adafruit IO
   temp->save(bme.readTemperature());
   hum->save(bme.readHumidity());
   press->save(bme.readPressure() / 100.0F);
   alt->save(bme.readAltitude(pressionAuNiveauDeLaMerEnHpa));
   inten->save(intensite);
-  
-  
+
+  // Affichage des données sur le moniteur série
+  // Date (année, mois, jour, heure, minute et seconde)
   Serial.print(now.year(), DEC);
   Serial.print('/');
   Serial.print(now.month(), DEC);
@@ -128,42 +122,40 @@ void loop() {
   Serial.print(now.minute(), DEC);
   Serial.print(':');
   Serial.print(now.second(), DEC);
+  Serial.print(";");
+  Serial.print(bme.readTemperature());  // Température
+  Serial.print(";");
+  Serial.print(bme.readPressure() / 100.0F);  // Pression
+  Serial.print(";");
+  Serial.print(bme.readHumidity());  // Humidité
+  Serial.print(";");
+  Serial.print(bme.readAltitude(pressionAuNiveauDeLaMerEnHpa));  // Altitude
+  Serial.print(";");
+  Serial.println(intensite);  // Intensité
 
-  Serial.print(";");
-  Serial.print(bme.readTemperature());  // TEMPERATURE
-  Serial.print(";");
-  Serial.print(bme.readPressure() / 100.0F);  // PRESSION
-  Serial.print(";");
-  Serial.print(bme.readHumidity());  // HUMIDITE
-  Serial.print(";");
-  Serial.print(bme.readAltitude(pressionAuNiveauDeLaMerEnHpa));  // ALTITUDE
-  Serial.print(";");
-  Serial.println(intensite); // Intensite
+  // Préparation de la chaîne de données pour la carte SD
+  dataString = String(now.year(), DEC) + ":" +
+               String(now.month(), DEC) + ":" +
+               String(now.day(), DEC) + " " +
+               String(now.hour(), DEC) + ":" +
+               String(now.minute(), DEC) + ":" +
+               String(now.second(), DEC) + ";" +
+               String(bme.readTemperature()) + ";" +
+               String(bme.readPressure() / 100.0F) + ";" +
+               String(bme.readHumidity()) + ";" +
+               String(bme.readAltitude(pressionAuNiveauDeLaMerEnHpa)) + ";" + 
+               String(intensite);
 
-  dataString = String(now.year(),DEC) + ":" +
-                String(now.month(),DEC) + ":" +
-                String(now.day(),DEC) + " " +
-                String(now.hour(),DEC) + ":" +
-                String(now.minute(),DEC) + ":" +
-                String(now.second(),DEC) + ";" +
-                String(bme.readTemperature()) + ";" +
-                String(bme.readPressure() / 100.0F) + ";" +
-                String(bme.readHumidity()) + ";" +
-                String(bme.readAltitude(pressionAuNiveauDeLaMerEnHpa)) + ";" + 
-                String(intensite);
-
+  // Enregistrement des données sur la carte SD
   File dataFile = SD.open("Données.txt", FILE_WRITE);
 
-  // if the file is available, write to it:
   if (dataFile) {
-    dataFile.println(dataString);
-    dataFile.close();
-    // print to the serial port too:
-    Serial.println(dataString);
+    dataFile.println(dataString);  // Écriture des données
+    dataFile.close();  // Fermeture du fichier
+    Serial.println(dataString);  // Affichage des données sur le moniteur série
+  } else {
+    Serial.println("Erreur lors de l'ouverture du fichier Données.txt");
   }
-  // if the file isn't open, pop up an error:
-  else { Serial.println("error opening datalog.txt"); }
 
-
-  delay(10000);  // Pause de 10 secondes
+  delay(10000);  // Pause de 10 secondes entre chaque boucle pour ne pas surcharger AdafruitIO
 }
